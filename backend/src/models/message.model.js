@@ -5,15 +5,21 @@ const messageSchema = new mongoose.Schema(
         senderId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
-            required: "true",
+            required: true,
         },
         receiverId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
-            required: "true",
+            required: true,
         },
         text: { type: String },
-        image: { type: String },
+        file: {
+            url: { type: String },
+            type: { type: String },
+            name: { type: String },
+            size: { type: Number },
+            originalName: { type: String }
+        }
     },
     { timestamps: true }
 );

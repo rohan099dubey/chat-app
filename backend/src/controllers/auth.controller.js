@@ -1,54 +1,77 @@
-import cloudinary from "../lib/cloudinary.js";
 import { generateToken } from "../lib/utils.js";
 import User from "../models/user.model.js"
 import bcrypt from "bcryptjs";
+import { supabase } from "../lib/supabase.js";
+import { validateUsername } from "../lib/validators.js";
+import jwt from "jsonwebtoken";
+import sharp from 'sharp';
+
 
 export const signup = async (req, res) => {
-    const { fullName, email, password } = req.body;
     try {
-        if (!fullName || !email || !password) {
-            return res.status(400).json({ message: "All fields are required ." });
+        const { fullName, username, email, password, confirmPassword } = req.body;
+
+        // Validate username
+        const validation = await validateUsername(username);
+        if (!validation.isValid) {
+            return res.status(400).json({ error: validation.message });
         }
 
-        if (password.length < 6) {
-            return res.status(400).json({ message: "Password must be atleast 6 characters in length" });
+        // Check if username exists
+        const existingUser = await User.findOne({ username });
+        if (existingUser) {
+            return res.status(400).json({ error: "Username is already taken" });
         }
 
-        const user = await User.findOne({ email })
-
-        if (user) {
-            return res.status(400).json({ message: "Email already exist" })
+        // Check if email exists
+        const existingEmail = await User.findOne({ email });
+        if (existingEmail) {
+            return res.status(400).json({ error: "Email is already registered" });
         }
 
-        const salt = await bcrypt.genSalt(10)
+        if (!fullName || !username || !email || !password || !confirmPassword) {
+            return res.status(400).json({ message: "All fields are required." });
+        }
+
+        if (password !== confirmPassword) {
+            return res.status(400).json({ message: "Passwords do not match" });
+        }
+
+        const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         const newUser = new User({
-            fullName: fullName,
-            email: email,
+            fullName,
+            username,
+            email,
             password: hashedPassword,
-        })
+        });
 
-        if (newUser) {
-            //generate jwt token 
-            generateToken(newUser._id, res)
-            await newUser.save();
+        await newUser.save();
 
-            res.status(201).json({
-                _id: newUser._id,
-                fullName: newUser.fullName,
-                email: newUser.email,
-                profilePic: newUser.profilePic,
-            })
+        const token = jwt.sign(
+            { userId: newUser._id },
+            process.env.JWT_SECRET,
+            { expiresIn: "15d" }
+        );
 
+        res.cookie("jwt", token, {
+            maxAge: 15 * 24 * 60 * 60 * 1000, // 15 days
+            httpOnly: true,
+            sameSite: "strict",
+            secure: process.env.NODE_ENV !== "development",
+        });
 
-        } else {
-            res.status(400).json({ message: "Invalid user data ." });
-        }
-
+        res.status(201).json({
+            _id: newUser._id,
+            fullName: newUser.fullName,
+            username: newUser.username,
+            email: newUser.email,
+            profilePic: newUser.profilePic,
+        });
     } catch (error) {
-        console.log("ERROR in sign-up controller", error.message);
-        res.status(500).json({ message: "Internal Server Error" });
+        console.log("Error in signup controller: ", error.message);
+        res.status(500).json({ error: "Internal server error" });
     }
 };
 
@@ -94,26 +117,57 @@ export const logout = (req, res) => {
 };
 
 export const updateProfile = async (req, res) => {
-
     try {
-
         const { profilePic } = req.body;
         const userID = req.user._id;
 
         if (!profilePic) {
-            return res.status(400).json({ message: "profile picture not provided" })
+            return res.status(400).json({ message: "Profile picture not provided" });
         }
 
-        const uploadResponse = await cloudinary.uploader.upload(profilePic);
+        // Convert base64 to buffer
+        const buffer = Buffer.from(profilePic.split(',')[1], 'base64');
+
+        // Generate unique filename
+        const filename = `${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+        const folderPath = `profile-pics/${userID}`;
+
+
+        const compressedBuffer = await sharp(buffer)
+            .resize({ width: 1024, height: 1024, fit: 'inside' }) // Resize to fit within 1024x1024
+            .jpeg({ quality: 60 }) // Compress to JPEG with 60% quality
+            .toBuffer();
+
+        // Upload to Supabase
+        const { error: uploadError } = await supabase.storage
+            .from('profile-pics')
+            .upload(`${folderPath}/${filename}`, compressedBuffer, {
+                contentType: 'image/jpeg',
+                cacheControl: '3600',
+                upsert: false
+            });
+
+        if (uploadError) {
+            console.error("Supabase upload error:", uploadError);
+            return res.status(500).json({ error: "Failed to upload profile picture" });
+        }
+
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+            .from('profile-pics')
+            .getPublicUrl(`${folderPath}/${filename}`);
+
+        // Update user profile in database
         const updatedUser = await User.findByIdAndUpdate(
             userID,
-            { profilePic: uploadResponse.secure_url },
-            { new: true });
+            { profilePic: publicUrl },
+            { new: true }
+        ).select("-password");
 
-        res.status(200).json({ updatedUser });
+        res.status(200).json(updatedUser);
 
     } catch (error) {
-        console.log("ERROR in upfate profile controller", error.message);
+        console.error("Error in update profile controller:", error);
         res.status(500).json({ message: "Internal Server Error" });
     }
 };
@@ -126,5 +180,36 @@ export const checkAuth = (req, res) => {
         res.status(500).json({ message: "Internal Server Error" });
     }
 };
+
+export const checkUsername = async (req, res) => {
+    try {
+        const { username } = req.query;
+
+        if (!username) {
+            return res.status(400).json({ error: "Username is required" });
+        }
+
+        // Validate username format and content
+        const validation = await validateUsername(username);
+        if (!validation.isValid) {
+            return res.status(400).json({
+                error: validation.message,
+                isAvailable: false
+            });
+        }
+
+        // Check if username exists
+        const existingUser = await User.findOne({ username });
+        res.status(200).json({
+            isAvailable: !existingUser,
+            message: existingUser ? 'Username is taken' : 'Username is available'
+        });
+    } catch (error) {
+        console.log("Error in checkUsername: ", error.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+
 
 

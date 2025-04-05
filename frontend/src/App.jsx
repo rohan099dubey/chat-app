@@ -7,22 +7,21 @@ import { useAuthStore } from "./store/useAuthStore.js";
 
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
-import ProfilePage from "./pages/ProfilePage";
 import SettingsPage from "./pages/SettingsPage";
 import SignUpPage from "./pages/SignUpPage";
+import FriendRequestsPage from "./pages/FriendRequestsPage";
 
 import { useEffect } from "react";
 import { useThemeStore } from "./store/useThemeStore.js";
+import ChatPage from "./components/homePage/ChatPage.jsx";
 
 const App = () => {
-  const { authUser, checkAuth, isCheckingAuth, onlineUsers } = useAuthStore();
+  const { authUser, checkAuth, isCheckingAuth } = useAuthStore();
   const { theme } = useThemeStore();
 
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
-
-  console.log("print from app.jsx", { authUser });
 
   if (isCheckingAuth && !authUser)
     return (
@@ -39,7 +38,7 @@ const App = () => {
 
         <Route
           path="/"
-          element={authUser ? <HomePage /> : <Navigate to="/login " />}
+          element={authUser ? <HomePage /> : <Navigate to="/login" />}
         />
 
         <Route
@@ -54,7 +53,12 @@ const App = () => {
 
         <Route
           path="/profile"
-          element={authUser ? <ProfilePage /> : <Navigate to="/login" />}
+          element={authUser ? <ChatPage /> : <Navigate to="/login" />}
+        />
+
+        <Route
+          path="/friend-requests"
+          element={authUser ? <FriendRequestsPage /> : <Navigate to="/login" />}
         />
       </Routes>
 

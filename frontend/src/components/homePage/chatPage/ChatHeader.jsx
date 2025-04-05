@@ -1,9 +1,9 @@
 import React from "react";
-import { useChatStore } from "../store/useChatStore";
-import { useAuthStore } from "../store/useAuthStore";
+import { useChatStore } from "../../../store/useChatStore";
+import { useAuthStore } from "../../../store/useAuthStore";
 
 const ChatHeader = () => {
-  const { selectedUser, setSelectedUser } = useChatStore(); // Fixed typo: serSelectedUser -> setSelectedUser
+  const { selectedUser, setSelectedUser } = useChatStore();
   const { onlineUsers } = useAuthStore();
 
   return (

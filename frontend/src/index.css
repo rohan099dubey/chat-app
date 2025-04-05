@@ -1,3 +1,15 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Add these styles to your CSS */
+
+/* Add these styles to your existing CSS */
+.select-none {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.cursor-col-resize {
+  cursor: col-resize;
+}
