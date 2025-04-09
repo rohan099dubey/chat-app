@@ -111,6 +111,11 @@ export const useChatStore = create((set, get) => ({
 
             const currentUser = useAuthStore.getState().authUser;
 
+            if (!currentUser) {
+                console.error("Current user not available");
+                return;
+            }
+
             // Check if message is from or to the selected user and current user
             const isSenderCurrentUser = newMessage.senderId === currentUser._id;
             const isReceiverCurrentUser = newMessage.receiverId === currentUser._id;

@@ -4,8 +4,7 @@ import Sidebar from "../components/Sidebar";
 import NoChatSelected from "../components/homePage/NoChatSelected";
 import { useAuthStore } from "../store/useAuthStore";
 import ResizableSidebar from "../components/sidebar/ResizableSidebar";
-import ChatPage from "../components/homePage/ChatPage";
-// import ChatContainer from "../components/homePage/ChatContainer";
+import ChatContainer from "../components/homePage/ChatContainer";
 
 const HomePage = () => {
   const { selectedUser } = useChatStore();
@@ -21,8 +20,8 @@ const HomePage = () => {
             <ResizableSidebar>
               <Sidebar />
             </ResizableSidebar>
-            <main className="flex-1 overflow-hidden">
-              {!selectedUser ? <NoChatSelected /> : <ChatPage />}
+            <main className="flex-1 overflow-hidden flex flex-col">
+              {!selectedUser ? <NoChatSelected /> : <ChatContainer />}
             </main>
           </div>
         </div>

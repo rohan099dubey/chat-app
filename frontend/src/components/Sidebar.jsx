@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
-import useFriendStore from "../store/useFriendStore";
+import { useFriendStore } from "../store/useFriendStore";
 import SidebarSkeleton from "./skeletons/SidebarSkeleton";
 import { Users, UserPlus, BellDot } from "lucide-react";
 import { Link } from "react-router-dom";

@@ -13,7 +13,7 @@ import FriendRequestsPage from "./pages/FriendRequestsPage";
 
 import { useEffect } from "react";
 import { useThemeStore } from "./store/useThemeStore.js";
-import ChatPage from "./components/homePage/ChatPage.jsx";
+import ProfilePage from "./pages/ProfilePage";
 
 const App = () => {
   const { authUser, checkAuth, isCheckingAuth } = useAuthStore();
@@ -53,7 +53,7 @@ const App = () => {
 
         <Route
           path="/profile"
-          element={authUser ? <ChatPage /> : <Navigate to="/login" />}
+          element={authUser ? <ProfilePage /> : <Navigate to="/login" />}
         />
 
         <Route

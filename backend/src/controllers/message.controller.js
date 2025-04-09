@@ -3,7 +3,7 @@ import Message from "../models/message.model.js";
 import mongoose from "mongoose";
 import { getReceiverSocketId, io } from "../lib/socket.js";
 import { supabase } from '../lib/supabase.js';
-import { compressFile, getFileType, validateFile, getFileUrl } from '../lib/fileUtilities.js';
+import { compressFile, getFileType, validateFile } from '../lib/fileUtilities.js';
 
 export const getUserForSidebar = async (req, res) => {
     try {
@@ -43,7 +43,7 @@ export const getMessages = async (req, res) => {
                 { senderId: myId, receiverId: userToChatId },
                 { senderId: userToChatId, receiverId: myId },
             ]
-        }).sort({ createdAt: 1 }).lean();
+        }).sort({ createdAt: 1 });
 
         // Process messages with files
         const messagesWithFiles = await Promise.all(messages.map(async (message) => {
@@ -78,7 +78,11 @@ export const getMessages = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
     try {
-        const { text, file } = req.body;
+        console.log("Request body:", req.body);
+        console.log("Request file:", req.file);
+
+        const { text } = req.body;
+        const file = req.file;
         const { id: receiverId } = req.params;
         const senderId = req.user._id;
 
@@ -108,7 +112,7 @@ export const sendMessage = async (req, res) => {
                 const { error: uploadError } = await supabase.storage
                     .from('chat-files')
                     .upload(`${folderPath}/${filename}`, buffer, {
-                        contentType: type,
+                        contentType: f,
                         cacheControl: '3600',
                         upsert: false
                     });
@@ -140,14 +144,14 @@ export const sendMessage = async (req, res) => {
             }
         }
 
-        if (!text?.trim() && !fileData) {
+        if (!text && !fileData) {
             return res.status(400).json({ error: "Message cannot be empty" });
         }
 
         const newMessage = new Message({
             senderId,
             receiverId,
-            text: text?.trim(),
+            text: text || "",
             file: fileData
         });
 

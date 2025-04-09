@@ -2,7 +2,7 @@ import React from "react";
 import { UserPlus, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/useAuthStore";
-import useFriendStore from "../../store/useFriendStore";
+import { useFriendStore } from "../../store/useFriendStore";
 import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 

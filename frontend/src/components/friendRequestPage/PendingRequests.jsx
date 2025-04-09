@@ -1,6 +1,6 @@
 import React from "react";
 import { Check, X } from "lucide-react";
-import useFriendStore from "../../store/useFriendStore";
+import { useFriendStore } from "../../store/useFriendStore";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useNavigate } from "react-router-dom";
 import { useEffect } from "react";

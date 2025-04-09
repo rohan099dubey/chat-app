@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { axiosInstance } from '../lib/axios';
 import toast from 'react-hot-toast';
 
-const useFriendStore = create((set, get) => ({
+export const useFriendStore = create((set, get) => ({
     friends: [],
     friendRequests: [],
     searchResults: [],
@@ -125,5 +125,3 @@ const useFriendStore = create((set, get) => ({
         set({ error: null });
     }
 }));
-
-export default useFriendStore; 
