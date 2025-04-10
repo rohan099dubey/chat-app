@@ -4,7 +4,7 @@ import { supabase } from './supabase.js';
 
 export const ALLOWED_FILE_TYPES = {
     IMAGE: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-    AUDIO: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm'],
+    AUDIO: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'],
     VIDEO: ['video/mp4', 'video/webm'],
     DOCUMENT: [
         'text/plain',
@@ -19,7 +19,12 @@ export const ALLOWED_FILE_TYPES = {
 
 export const getFileType = (mimeType) => {
     if (!mimeType) return 'unknown';
-
+    for (const category in ALLOWED_FILE_TYPES) {
+        if (ALLOWED_FILE_TYPES[category].includes(mimeType)) {
+            return category.toLowerCase(); // Return 'image', 'audio', etc.
+        }
+    }
+    // Fallback for broader categories if specific mime isn't listed but starts correctly
     if (mimeType.startsWith('image/')) return 'image';
     if (mimeType.startsWith('video/')) return 'video';
     if (mimeType.startsWith('audio/')) return 'audio';
@@ -27,6 +32,7 @@ export const getFileType = (mimeType) => {
 
     return 'unknown';
 };
+const ALL_ALLOWED_MIMETYPES_FLAT = Object.values(ALLOWED_FILE_TYPES).flat();
 
 export const formatFileSize = (bytes) => {
     if (bytes < 1024) return bytes + ' B';
@@ -35,63 +41,86 @@ export const formatFileSize = (bytes) => {
 };
 
 export const compressFile = async (file) => {
-    // File is already in base64 format from the client
-    const buffer = Buffer.from(file.data.split(',')[1], 'base64');
+    // Input 'file' should have { buffer, mimetype, originalname, size }
+    const { buffer, mimetype, originalname, size } = file;
 
-    // For non-image files, just return the buffer
-    if (!file.type.startsWith('image/')) {
-        return {
-            buffer,
-            type: file.type,
-            name: file.name,
-            size: file.size
-        };
+    if (!buffer || !mimetype || !originalname) {
+        throw new Error("Invalid file data provided for compression.");
     }
 
-    // Compress only images
-    try {
-        const compressedBuffer = await sharp(buffer)
-            .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 80 })
-            .toBuffer();
+    console.log(`[CompressFile] Processing: ${originalname}, Type: ${mimetype}, Size: ${size}`);
 
-        return {
-            buffer: compressedBuffer,
-            type: 'image/jpeg',
-            name: file.name.replace(/\.[^/.]+$/, '.jpg'),  // Change extension to jpg
-            size: compressedBuffer.length
-        };
-    } catch (err) {
-        console.error('Error compressing image:', err);
-        // Fallback to original file if compression fails
-        return {
-            buffer,
-            type: file.type,
-            name: file.name,
-            size: file.size
-        };
+    // Compress only images
+    if (mimetype.startsWith('image/')) {
+        try {
+            console.log("[CompressFile] Attempting image compression...");
+            const compressedBuffer = await sharp(buffer)
+                .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 80, progressive: true }) // Adjust quality as needed
+                .toBuffer();
+
+            const compressedSize = compressedBuffer.length;
+            const newName = originalname.replace(/\.[^/.]+$/, '.jpg'); // Change extension
+            console.log(`[CompressFile] Compression successful. New size: ${compressedSize}, New name: ${newName}`);
+
+            return {
+                buffer: compressedBuffer,
+                type: 'image/jpeg', // Output is JPEG
+                name: newName,
+                size: compressedSize
+            };
+        } catch (err) {
+            console.error('[CompressFile] Error compressing image:', err);
+            // Fallback to original file if compression fails
+            console.log("[CompressFile] Compression failed, falling back to original buffer.");
+            return { buffer, type: mimetype, name: originalname, size };
+        }
+    } else {
+        console.log("[CompressFile] File is not an image, returning original buffer.");
+        // For non-image files, just return the original data
+        return { buffer, type: mimetype, name: originalname, size };
     }
 };
 
 export const validateFile = (file) => {
+    // Input 'file' should have { type (mimetype), size }
+    const { type: mimeType, size } = file;
+
+    if (!mimeType || size === undefined) {
+        throw new Error("Invalid file data provided for validation.");
+    }
+
+    console.log(`[ValidateFile] Validating: Type: ${mimeType}, Size: ${size}`);
+
+    // Check against the flat list of all allowed MIME types
+    if (!ALL_ALLOWED_MIMETYPES_FLAT.includes(mimeType)) {
+        console.log("[ValidateFile] Failed: MIME type not in allowed list.");
+        throw new Error(`File type (${mimeType}) is not supported`);
+    }
+
+    // Define max sizes (consider making these configurable, e.g., via .env)
     const maxSizes = {
         image: 10 * 1024 * 1024,    // 10MB
-        audio: 20 * 1024 * 1024,    // 20MB for audio files
+        audio: 50 * 1024 * 1024,    // 50MB (increased)
         video: 100 * 1024 * 1024,   // 100MB
         document: 50 * 1024 * 1024  // 50MB
     };
 
-    const fileType = getFileType(file.type);
+    const fileTypeCategory = getFileType(mimeType); // Get category ('image', 'audio', etc.)
 
-    if (fileType === 'unknown') {
-        throw new Error('File type not supported');
+    // Check size based on category
+    if (fileTypeCategory !== 'unknown' && maxSizes[fileTypeCategory] && size > maxSizes[fileTypeCategory]) {
+        const limitMB = (maxSizes[fileTypeCategory] / (1024 * 1024)).toFixed(0);
+        console.log(`[ValidateFile] Failed: Size (${size}) exceeds limit (${limitMB}MB) for category ${fileTypeCategory}.`);
+        throw new Error(`File size exceeds the limit of ${limitMB} MB for ${fileTypeCategory}s`);
+    } else if (fileTypeCategory === 'unknown') {
+        // This case might be redundant if already checked by MIME type list, but keep as fallback
+        console.log("[ValidateFile] Failed: Could not determine file category for size check.");
+        throw new Error(`File type (${mimeType}) category unknown for size validation`);
     }
 
-    if (file.size > maxSizes[fileType]) {
-        throw new Error(`File size should be less than ${(maxSizes[fileType] / (1024 * 1024)).toFixed(0)} MB`);
-    }
-
-    return true;
+    console.log("[ValidateFile] Validation passed.");
+    return true; // Indicate success
 };
 
 export const validateProfileImage = (base64String) => {

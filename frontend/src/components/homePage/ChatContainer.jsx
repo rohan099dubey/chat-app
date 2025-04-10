@@ -1,44 +1,15 @@
-// ChatContainer.jsx - Updated version
-import React, { useEffect } from "react";
-import { useParams } from "react-router-dom";
+// frontend/src/components/homePage/ChatContainer.jsx
+import React from "react"; // Removed useEffect
+// Removed useParams
 import { useChatStore } from "../../store/useChatStore.js";
-import { useAuthStore } from "../../store/useAuthStore.js";
+// Removed useAuthStore (if not used elsewhere here)
 import ChatHeader from "./chatPage/ChatHeader.jsx";
 import MessageInput from "./chatPage/MessageInput.jsx";
 import MessageDisplay from "./chatPage/MessageDisplay.jsx";
 
 const ChatContainer = () => {
-  const { id: chatUserId } = useParams();
-  const {
-    getMessages,
-    selectedUser,
-    subscribeToMessages,
-    unsubscribeFromMessages,
-    setSelectedUser,
-  } = useChatStore();
-
-  // Load messages and set up subscriptions when component mounts
-  useEffect(() => {
-    console.log("ChatContainer mounted with chatUserId:", chatUserId);
-
-    if (chatUserId && selectedUser) {
-      // Make sure we get messages for this user
-      getMessages(chatUserId);
-
-      // Set up real-time message subscription
-      subscribeToMessages();
-    }
-
-    return () => {
-      unsubscribeFromMessages();
-    };
-  }, [
-    chatUserId,
-    selectedUser,
-    getMessages,
-    subscribeToMessages,
-    unsubscribeFromMessages,
-  ]);
+  // Removed the useEffect for fetching messages and subscribing/unsubscribing
+  // This logic is now handled within useChatStore's setSelectedUser and subscribeToMessages
 
   return (
     <div className="flex flex-col h-full">
@@ -46,6 +17,7 @@ const ChatContainer = () => {
 
       {/* Flex-grow container with overflow for messages */}
       <div className="flex-grow overflow-y-auto">
+        {/* MessageDisplay will react to changes in the messages state from the store */}
         <MessageDisplay />
       </div>
 

@@ -27,16 +27,20 @@ export const useChatStore = create((set, get) => ({
     getMessages: async (userId) => {
         if (!userId) {
             console.error("No user ID provided to getMessages");
+            set({ messages: [], isMessageLoading: false });
             return;
         }
 
-        set({ isMessageLoading: true });
+        console.log(`[ChatStore] Fetching messages for user ID: ${userId}`);
+        set({ isMessageLoading: true, messages: [] });
         try {
             const res = await axiosInstance.get(`/messages/${userId}`);
+            console.log("[ChatStore] Messages received:", res.data);
             set({ messages: res.data });
         } catch (error) {
-            console.error("Error fetching messages:", error);
+            console.error("[ChatStore] Error fetching messages:", error);
             toast.error(error.response?.data?.error || error.response?.data?.message || "Failed to get messages");
+            set({ messages: [] });
         } finally {
             set({ isMessageLoading: false });
         }
@@ -55,9 +59,7 @@ export const useChatStore = create((set, get) => ({
                 throw new Error("Message data must be FormData");
             }
 
-            // Debug logs to verify data
-            console.log("Selected user:", selectedUser._id);
-
+            console.log("[ChatStore] Sending message to user:", selectedUser._id);
             const res = await axiosInstance.post(
                 `/messages/send/${selectedUser._id}`,
                 messageData,
@@ -65,27 +67,19 @@ export const useChatStore = create((set, get) => ({
                     headers: {
                         'Content-Type': 'multipart/form-data',
                     },
-                    timeout: 60000, // Increased timeout for file uploads
+                    timeout: 60000,
                 }
             );
-
-            // Log successful response
-            console.log("Message sent successfully:", res.data);
-
-            // Update messages state with the new message
+            console.log("[ChatStore] Message sent successfully:", res.data);
             set({ messages: [...messages, res.data] });
             return res.data;
         } catch (error) {
-            console.error("Send message error details:", {
+            console.error("[ChatStore] Send message error details:", {
                 status: error?.response?.status,
                 data: error?.response?.data,
                 message: error?.message
             });
-
-            const errorMessage = error?.response?.data?.error ||
-                error?.response?.data?.message ||
-                error.message ||
-                "Message not sent!";
+            const errorMessage = error?.response?.data?.error || error?.response?.data?.message || error.message || "Message not sent!";
             toast.error(errorMessage);
             throw error;
         }
@@ -93,73 +87,97 @@ export const useChatStore = create((set, get) => ({
 
     subscribeToMessages: () => {
         const { selectedUser } = get();
+        console.log("[ChatStore] Attempting to subscribe for user:", selectedUser?._id);
         if (!selectedUser) return;
 
         const socket = useAuthStore.getState().socket;
         if (!socket) {
-            console.error("Socket not available");
+            console.error("[ChatStore] Socket not available for subscription");
             return;
         }
 
-        // Remove any existing listeners to avoid duplicates
         socket.off("newMessage");
+        console.log("[ChatStore] Removed previous 'newMessage' listener.");
 
-        // Add new listener
         socket.on("newMessage", (newMessage) => {
-            // Add logging to debug message reception
-            console.log("Received new message:", newMessage);
+            console.log("[ChatStore] Received new message via socket:", newMessage);
 
+            const currentSelectedUser = get().selectedUser;
             const currentUser = useAuthStore.getState().authUser;
 
             if (!currentUser) {
-                console.error("Current user not available");
+                console.error("[ChatStore] Current auth user not available in socket handler");
+                return;
+            }
+            if (!currentSelectedUser) {
+                console.log("[ChatStore] No user selected when message received, ignoring.");
                 return;
             }
 
-            // Check if message is from or to the selected user and current user
             const isSenderCurrentUser = newMessage.senderId === currentUser._id;
             const isReceiverCurrentUser = newMessage.receiverId === currentUser._id;
-            const isSenderSelectedUser = newMessage.senderId === selectedUser._id;
-            const isReceiverSelectedUser = newMessage.receiverId === selectedUser._id;
+            const isSenderSelectedUser = newMessage.senderId === currentSelectedUser._id;
+            const isReceiverSelectedUser = newMessage.receiverId === currentSelectedUser._id;
 
             const isRelevantMessage =
                 (isSenderCurrentUser && isReceiverSelectedUser) ||
                 (isReceiverCurrentUser && isSenderSelectedUser);
 
             if (isRelevantMessage) {
-                // Debug message
-                console.log("Adding message to state:", newMessage);
-
-                // Check for duplicate message
-                const state = get();
-                const isDuplicate = state.messages.some(msg => msg._id === newMessage._id);
-
+                console.log("[ChatStore] Adding relevant message to state:", newMessage);
+                const isDuplicate = get().messages.some(msg => msg._id === newMessage._id);
                 if (!isDuplicate) {
                     set(state => ({
                         messages: [...state.messages, newMessage]
                     }));
+                } else {
+                    console.log("[ChatStore] Duplicate message detected, not adding:", newMessage._id);
                 }
+            } else {
+                console.log("[ChatStore] Received message not relevant to current chat.");
             }
         });
+        console.log("[ChatStore] Added 'newMessage' listener for user:", selectedUser._id);
     },
 
     unsubscribeFromMessages: () => {
         const socket = useAuthStore.getState().socket;
         if (socket) {
             socket.off("newMessage");
+            console.log("[ChatStore] Unsubscribed from 'newMessage'.");
         }
     },
 
-    setSelectedUser: (selectedUser) => {
-        set({ selectedUser });
+    setSelectedUser: (newUser) => {
+        const previousUser = get().selectedUser;
+        console.log(`[ChatStore] setSelectedUser called. Previous: ${previousUser?._id}, New: ${newUser?._id}`);
 
-        // Re-subscribe to messages when selected user changes
-        setTimeout(() => {
-            get().subscribeToMessages();
-        }, 0);
+        if (newUser?._id !== previousUser?._id) {
+            set({ selectedUser: newUser });
+            console.log("[ChatStore] Updated selectedUser state.");
+
+            if (newUser?._id) {
+                console.log("[ChatStore] Triggering getMessages for new user.");
+                get().getMessages(newUser._id);
+            } else {
+                console.log("[ChatStore] No new user selected, clearing messages.");
+                set({ messages: [] });
+            }
+
+            setTimeout(() => {
+                console.log("[ChatStore] Re-subscribing to messages after user change.");
+                get().unsubscribeFromMessages();
+                if (newUser?._id) {
+                    get().subscribeToMessages();
+                }
+            }, 0);
+        } else {
+            console.log("[ChatStore] Selected user is the same, no action taken.");
+        }
     },
 
     clearMessages: () => {
+        console.log("[ChatStore] Clearing messages.");
         set({ messages: [] });
     }
 }));

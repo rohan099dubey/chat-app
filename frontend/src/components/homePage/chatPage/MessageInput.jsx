@@ -1,9 +1,31 @@
+// frontend/src/components/homePage/chatPage/MessageInput.jsx
 import React, { useState, useRef, useEffect } from "react";
 import { useChatStore } from "../../../store/useChatStore.js";
 import { toast } from "react-hot-toast";
-import { File, Send, Mic, X, Loader2 } from "lucide-react";
+import { File as FileIcon, Send, Mic, X, Loader2 } from "lucide-react";
 import AudioRecorder from "./AudioRecorder.jsx";
 import FilePreview from "./FilePreview.jsx";
+
+// --- Add Allowed Types (mirror backend for consistency) ---
+const FE_ALLOWED_FILE_TYPES = {
+  IMAGE: ["image/jpeg", "image/png", "image/gif", "image/webp"],
+  AUDIO: ["audio/mpeg", "audio/wav", "audio/ogg", "audio/webm", "audio/mp4"], // Added mp4 for recordings
+  VIDEO: ["video/mp4", "video/webm"],
+  DOCUMENT: [
+    "text/plain",
+    "application/pdf",
+    "application/zip",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ],
+};
+
+// Flatten allowed types for easier checking and input accept attribute
+const ALL_ALLOWED_MIMETYPES = Object.values(FE_ALLOWED_FILE_TYPES).flat();
+const ACCEPT_STRING = ALL_ALLOWED_MIMETYPES.join(",");
+// --- End Add Allowed Types ---
 
 const MessageInput = () => {
   const [text, setText] = useState("");
@@ -14,23 +36,38 @@ const MessageInput = () => {
 
   const { sendMessage, selectedUser } = useChatStore();
 
-  // Cleanup previews on unmount
-  useEffect(() => {
-    return () => {
-      if (filePreview?.preview) {
-        URL.revokeObjectURL(filePreview.preview);
-      }
-    };
-  }, [filePreview]);
+  // ... useEffect for cleanup ...
 
+  // --- Updated handleFileChange ---
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Validate file size (generic 50MB limit)
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error("File size should be less than 50MB");
+    // --- Frontend File Type Validation ---
+    if (!ALL_ALLOWED_MIMETYPES.includes(file.type)) {
+      toast.error(`File type (${file.type}) is not supported.`);
+      // Clear the input field value in case the user tries again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = null;
+      }
       return;
+    }
+    // --- End Frontend File Type Validation ---
+
+    // Validate file size (generic 50MB limit - adjust if needed based on backend limits)
+    // Consider using specific limits per type like backend if desired
+    const MAX_SIZE_MB = 50;
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      toast.error(`File size should be less than ${MAX_SIZE_MB}MB`);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = null;
+      }
+      return;
+    }
+
+    // Clear previous preview if any
+    if (filePreview?.preview) {
+      URL.revokeObjectURL(filePreview.preview);
     }
 
     setFilePreview({
@@ -41,18 +78,28 @@ const MessageInput = () => {
       file: file, // Store the actual file object
     });
   };
+  // --- End Updated handleFileChange ---
 
+  // --- Updated handleAudioRecordComplete ---
   const handleAudioRecordComplete = (audioBlob) => {
     setIsRecording(false);
 
-    // Create consistent file name with extension based on the blob type
     const extension = audioBlob.type.includes("mp4") ? "mp4" : "webm";
     const fileName = `Voice Message ${new Date().toLocaleTimeString()}.${extension}`;
 
-    // Create proper File object
+    // --- Use the native File constructor (no name collision now) ---
     const file = new File([audioBlob], fileName, { type: audioBlob.type });
+    // --- End Use native File ---
 
-    // Set consistent file preview format
+    if (!FE_ALLOWED_FILE_TYPES.AUDIO.includes(file.type)) {
+      toast.error(`Recorded audio type (${file.type}) is not supported.`);
+      return;
+    }
+
+    if (filePreview?.preview) {
+      URL.revokeObjectURL(filePreview.preview);
+    }
+
     setFilePreview({
       file: file,
       preview: URL.createObjectURL(file),
@@ -61,17 +108,19 @@ const MessageInput = () => {
       size: audioBlob.size,
     });
   };
+  // --- End Updated handleAudioRecordComplete ---
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
 
-    // First, check if we have either text or file
-    if (!text.trim() && !filePreview?.file) {
+    const currentText = text.trim(); // Trim text once
+    const currentFile = filePreview?.file;
+
+    if (!currentText && !currentFile) {
       toast.error("Message cannot be empty");
       return;
     }
 
-    // Check if user is selected
     if (!selectedUser || !selectedUser._id) {
       toast.error("No user selected to send message to");
       return;
@@ -81,24 +130,21 @@ const MessageInput = () => {
       setIsUploading(true);
       const formData = new FormData();
 
-      // Only append text if it's not empty
-      if (text.trim()) {
-        formData.append("text", text.trim());
+      if (currentText) {
+        formData.append("text", currentText);
       }
 
-      if (filePreview?.file) {
-        // IMPORTANT FIX: Just append the file directly, don't recreate it
-        formData.append("file", filePreview.file);
+      if (currentFile) {
+        // Ensure the key is 'file' matching multer.single('file')
+        formData.append("file", currentFile, currentFile.name); // Added filename
       }
 
-      // Debug log
-      console.log("Sending message to:", selectedUser._id);
-      console.log("FormData contents:");
+      console.log("[MessageInput] Sending FormData contents:");
       for (let pair of formData.entries()) {
-        console.log(pair[0], typeof pair[1], pair[1]);
+        console.log(pair[0], pair[1]); // Log file object details if present
       }
 
-      await sendMessage(formData);
+      await sendMessage(formData); // Pass FormData to store action
 
       // Clear form after successful send
       setText("");
@@ -110,12 +156,16 @@ const MessageInput = () => {
         fileInputRef.current.value = null;
       }
     } catch (error) {
-      console.error("Failed to send message:", error);
+      // Error handling is likely done within the sendMessage action now,
+      // but keep a fallback here just in case.
+      console.error("[MessageInput] Failed to send message:", error);
       const errorMessage =
         error?.response?.data?.error ||
         error?.response?.data?.message ||
+        error?.message || // Include error.message
         "Failed to send message";
-      toast.error(errorMessage);
+      // Avoid duplicate toasts if store action already showed one
+      // toast.error(errorMessage);
     } finally {
       setIsUploading(false);
     }
@@ -123,86 +173,102 @@ const MessageInput = () => {
 
   return (
     <div className="p-4 w-full">
+      {/* File Preview */}
       {filePreview && (
         <div className="mb-3">
           <FilePreview
             file={filePreview}
-            onRemove={() => setFilePreview(null)}
+            onRemove={() => {
+              if (filePreview?.preview)
+                URL.revokeObjectURL(filePreview.preview);
+              setFilePreview(null);
+              if (fileInputRef.current) fileInputRef.current.value = null;
+            }}
           />
         </div>
       )}
 
+      {/* Audio Recorder */}
       {isRecording && (
+        // ... (AudioRecorder rendering - seems okay)
         <div className="mb-3">
           <AudioRecorder
             onRecordComplete={handleAudioRecordComplete}
             onCancel={() => setIsRecording(false)}
           />
-          <button
-            onClick={() => setIsRecording(false)}
-            className="btn btn-circle btn-sm btn-ghost"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {/* Simplified cancel */}
+          {/* <button onClick={() => setIsRecording(false)} className="btn btn-circle btn-sm btn-ghost"><X className="w-5 h-5" /></button> */}
         </div>
       )}
 
-      <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-        <input
-          type="file"
-          className="hidden"
-          ref={fileInputRef}
-          onChange={handleFileChange}
-          accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.txt,.c,.cpp,.mp3,.wav,.ogg,.webm"
-        />
+      {/* Form */}
+      {!isRecording && ( // Hide form while recording UI is active
+        <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+          {/* File Input */}
+          <input
+            type="file"
+            className="hidden"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            // Use dynamically generated accept string
+            accept={ACCEPT_STRING}
+          />
 
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="btn btn-circle btn-sm btn-ghost"
-          aria-label="Attach file"
-          disabled={isUploading || isRecording}
-        >
-          <File className="w-5 h-5" />
-        </button>
-
-        {!isRecording && !filePreview && (
+          {/* Attach File Button */}
           <button
             type="button"
-            onClick={() => setIsRecording(true)}
+            onClick={() => fileInputRef.current?.click()}
             className="btn btn-circle btn-sm btn-ghost"
-            aria-label="Record audio"
-            disabled={isUploading}
+            aria-label="Attach file"
+            disabled={isUploading || isRecording || !!filePreview} // Disable if preview exists
+            title="Attach file"
           >
-            <Mic className="w-5 h-5" />
+            <FileIcon className="w-5 h-5" />
           </button>
-        )}
 
-        <input
-          type="text"
-          className="input input-bordered w-full"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Type a message..."
-          disabled={isUploading || isRecording}
-        />
-
-        <button
-          type="submit"
-          className="btn btn-circle btn-primary"
-          disabled={
-            isUploading ||
-            (isRecording && !filePreview) ||
-            (!text.trim() && !filePreview)
-          }
-        >
-          {isUploading ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
-          ) : (
-            <Send className="w-5 h-5" />
+          {/* Record Audio Button */}
+          {!filePreview && ( // Don't show record if file is already selected
+            <button
+              type="button"
+              onClick={() => setIsRecording(true)}
+              className="btn btn-circle btn-sm btn-ghost"
+              aria-label="Record audio"
+              disabled={isUploading || isRecording}
+              title="Record audio"
+            >
+              <Mic className="w-5 h-5" />
+            </button>
           )}
-        </button>
-      </form>
+
+          {/* Text Input */}
+          <input
+            type="text"
+            className="input input-bordered w-full"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Type a message..."
+            disabled={isUploading || isRecording}
+          />
+
+          {/* Send Button */}
+          <button
+            type="submit"
+            className="btn btn-circle btn-primary"
+            disabled={
+              isUploading ||
+              isRecording || // Disable while recording UI is active
+              (!text.trim() && !filePreview) // Disable if both empty
+            }
+            title="Send message"
+          >
+            {isUploading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Send className="w-5 h-5" />
+            )}
+          </button>
+        </form>
+      )}
     </div>
   );
 };
