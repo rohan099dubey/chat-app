@@ -10,6 +10,7 @@ import LoginPage from "./pages/LoginPage";
 import SettingsPage from "./pages/SettingsPage";
 import SignUpPage from "./pages/SignUpPage";
 import FriendRequestsPage from "./pages/FriendRequestsPage";
+import OtpVerificationPage from "./pages/OtpVerificationPage";
 
 import { useEffect } from "react";
 import { useThemeStore } from "./store/useThemeStore.js";
@@ -59,6 +60,11 @@ const App = () => {
         <Route
           path="/friend-requests"
           element={authUser ? <FriendRequestsPage /> : <Navigate to="/login" />}
+        />
+
+        <Route
+          path="/verify-otp"
+          element={!authUser ? <OtpVerificationPage /> : <Navigate to="/" />}
         />
       </Routes>
 

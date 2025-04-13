@@ -34,10 +34,18 @@ export const useAuthStore = create((set, get) => ({
         set({ isSigningUp: true });
         try {
             const res = await axiosInstance.post("/auth/signup", data);
-            set({ authUser: res.data });
-            toast.success("Account created successfully");
-            get().connectSocket();
-            return res.data;
+            
+            // If verification is required, don't set the user yet
+            if (res.data.requiresVerification) {
+                toast.success("Account created! Please verify your email");
+                return res.data;
+            } else {
+                // Legacy flow if verification is not required
+                set({ authUser: res.data });
+                toast.success("Account created successfully");
+                get().connectSocket();
+                return res.data;
+            }
         } catch (error) {
             const errorMsg = error?.response?.data?.error || error?.response?.data?.message || "Signup failed!";
             toast.error(errorMsg);
@@ -59,6 +67,12 @@ export const useAuthStore = create((set, get) => ({
             }
 
             const res = await axiosInstance.post("/auth/login", data);
+            
+            // Check if response indicates user needs to verify email
+            if (res.data.isVerified === false) {
+                return res.data; // Return data containing email for verification
+            }
+            
             set({ authUser: res.data });
             toast.success("Logged in successfully");
             get().connectSocket();
@@ -96,6 +110,31 @@ export const useAuthStore = create((set, get) => ({
             throw error;
         } finally {
             set({ isUpdatingProfile: false });
+        }
+    },
+
+    // Verify OTP for email verification
+    verifyOTP: async (email, otp) => {
+        try {
+            const res = await axiosInstance.post("/auth/verify-otp", { email, otp });
+            set({ authUser: res.data });
+            get().connectSocket();
+            return res.data;
+        } catch (error) {
+            const errorMsg = error?.response?.data?.message || "OTP verification failed";
+            toast.error(errorMsg);
+            throw new Error(errorMsg);
+        }
+    },
+
+    // Resend OTP for email verification
+    resendOTP: async (email) => {
+        try {
+            await axiosInstance.post("/auth/resend-otp", { email });
+            return true;
+        } catch (error) {
+            const errorMsg = error?.response?.data?.message || "Failed to resend OTP";
+            throw new Error(errorMsg);
         }
     },
 

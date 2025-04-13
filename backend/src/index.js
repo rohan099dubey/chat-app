@@ -8,6 +8,7 @@ import messageRoutes from "./routes/message.route.js";
 import friendRoutes from "./routes/friend.route.js";
 import { server, app } from './lib/socket.js';
 import { connectDB } from './lib/db.js';
+import { scheduleCleanupJob } from './utils/cleanup.js';
 
 dotenv.config();
 
@@ -35,4 +36,6 @@ server.on('error', (err) => {
 server.listen(PORT, () => {
     console.log("running Server on PORT:" + PORT)
     connectDB();
+    // Start the cleanup job for unverified users
+    scheduleCleanupJob();
 })

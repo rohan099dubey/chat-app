@@ -45,8 +45,17 @@ const LoginForm = () => {
 
     setLoading(true);
     try {
-      await login(formData);
-      navigate("/");
+      const result = await login(formData);
+      
+      // Check if user needs to verify email
+      if (result && result.isVerified === false) {
+        toast.error("Please verify your email to login");
+        // Redirect to OTP verification page with email
+        navigate("/verify-otp", { state: { email: formData.email } });
+      } else {
+        // Normal login flow
+        navigate("/");
+      }
     } catch (error) {
       // Error is already handled in the store
     } finally {

@@ -114,9 +114,16 @@ const SignupForm = () => {
 
     setLoading(true);
     try {
-      await signup(formData);
-      toast.success("Account created successfully!");
-      navigate("/");
+      const result = await signup(formData);
+      
+      // Check if we need to verify email
+      if (result.requiresVerification) {
+        // Redirect to OTP verification page with email
+        navigate("/verify-otp", { state: { email: formData.email } });
+      } else {
+        // Traditional flow if OTP is not required
+        navigate("/");
+      }
     } catch (error) {
       toast.error(error.response?.data?.error || "Error creating account");
     } finally {

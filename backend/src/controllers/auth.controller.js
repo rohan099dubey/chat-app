@@ -1,10 +1,33 @@
-import { generateToken } from "../lib/utils.js";
-import User from "../models/user.model.js"
 import bcrypt from "bcryptjs";
-import { supabase } from "../lib/supabase.js";
-import { validateUsername } from "../lib/validators.js";
 import jwt from "jsonwebtoken";
 import sharp from 'sharp';
+import nodemailer from 'nodemailer';
+import User from "../models/user.model.js"
+import { generateToken } from "../lib/utils.js";
+import { supabase } from "../lib/supabase.js";
+import { validateUsername } from "../lib/validators.js";
+
+// Create reusable transporter object using SMTP transport
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    },
+    tls: {
+        rejectUnauthorized: false // Helps in some environments
+    }
+});
+
+// Verify transporter connection configuration
+transporter.verify(function(error, success) {
+    if (error) {
+        console.log('SMTP server connection error:', error);
+    } else {
+        console.log('SMTP server connection established');
+    }
+});
+
 
 
 export const signup = async (req, res) => {
@@ -40,34 +63,49 @@ export const signup = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
+        // Generate 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otp_expiation = Date.now() + 10 * 60 * 1000; // 10 minutes from now
+        console.log("Generated OTP:", otp);
+
         const newUser = new User({
             fullName,
             username,
             email,
             password: hashedPassword,
+            otp,
+            otp_expiation, // Using the field name from your model
+            isVerified: false,
         });
 
         await newUser.save();
 
-        const token = jwt.sign(
-            { userId: newUser._id },
-            process.env.JWT_SECRET,
-            { expiresIn: "15d" }
-        );
-
-        res.cookie("jwt", token, {
-            maxAge: 15 * 24 * 60 * 60 * 1000, // 15 days
-            httpOnly: true,
-            sameSite: "strict",
-            secure: process.env.NODE_ENV !== "development",
+        // Send verification email with OTP
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: "Verify your email",
+            text: `Your OTP is ${otp} and it will expire in 10 minutes. Please verify your email to continue and don't share this OTP with anyone.`,
+            html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
+                <h2 style="color: #4f46e5;">Verify Your Email</h2>
+                <p>Hello ${fullName},</p>
+                <p>Thank you for signing up! Please use the following OTP code to verify your email address:</p>
+                <div style="background-color: #f3f4f6; padding: 12px; border-radius: 4px; text-align: center; font-size: 24px; letter-spacing: 4px; margin: 20px 0;">
+                    <strong>${otp}</strong>
+                </div>
+                <p>This code will expire in 10 minutes.</p>
+                <p><strong>Note:</strong> Do not share this OTP with anyone for security reasons.</p>
+                <p>If you did not sign up for an account, please ignore this email.</p>
+                <p>Thanks,<br>The Chat App Team</p>
+            </div>
+            `
         });
 
         res.status(201).json({
-            _id: newUser._id,
-            fullName: newUser.fullName,
-            username: newUser.username,
+            message: "User registered successfully",
             email: newUser.email,
-            profilePic: newUser.profilePic,
+            requiresVerification: true
         });
     } catch (error) {
         console.log("Error in signup controller: ", error.message);
@@ -88,6 +126,15 @@ export const login = async (req, res) => {
 
         if (!isPasswordCorrect) {
             return res.status(400).json({ message: "Invalid Credentials" })
+        }
+
+        // Check if user is verified
+        if (!user.isVerified) {
+            return res.status(401).json({ 
+                message: "Please verify your email before logging in",
+                isVerified: false,
+                email: user.email
+            });
         }
 
         generateToken(user._id, res)
@@ -210,6 +257,158 @@ export const checkUsername = async (req, res) => {
     }
 };
 
+// Verify OTP endpoint
+export const verifyOTP = async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+        console.log("Verifying OTP:", { email, otp });
 
+        if (!email || !otp) {
+            return res.status(400).json({ message: "Email and OTP are required" });
+        }
+
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            console.log("User not found with email:", email);
+            return res.status(400).json({ message: "User not found" });
+        }
+
+        console.log("User found:", {
+            id: user._id,
+            email: user.email,
+            storedOTP: user.otp,
+            otpExpiration: user.otp_expiation,
+            isVerified: user.isVerified,
+            currentTime: new Date()
+        });
+
+        // If user is already verified, send success response with their data
+        if (user.isVerified) {
+            console.log("User already verified, returning user data:", user._id);
+            
+            // Generate token for already verified user
+            generateToken(user._id, res);
+            
+            // Return success with user data
+            return res.status(200).json({
+                _id: user._id,
+                fullName: user.fullName,
+                username: user.username,
+                email: user.email,
+                profilePic: user.profilePic,
+                alreadyVerified: true,
+                message: "Email is already verified"
+            });
+        }
+
+        // Check if OTP is correct - ensure both are strings and trimmed
+        const storedOTP = String(user.otp || '').trim();
+        const submittedOTP = String(otp || '').trim();
+        
+        console.log("OTP comparison:", { storedOTP, submittedOTP });
+        
+        if (!storedOTP || storedOTP !== submittedOTP) {
+            return res.status(400).json({ message: "Invalid OTP" });
+        }
+
+        // Check if OTP is expired
+        if (!user.otp_expiation || user.otp_expiation < Date.now()) {
+            console.log("OTP expired:", { 
+                expiration: new Date(user.otp_expiation || null), 
+                now: new Date() 
+            });
+            return res.status(400).json({ message: "OTP has expired or is invalid" });
+        }
+
+        // Verify the user
+        user.isVerified = true;
+        user.otp = undefined;
+        user.otp_expiation = undefined;
+        await user.save();
+        console.log("User verified successfully:", user._id);
+
+        // Generate token
+        generateToken(user._id, res);
+
+        res.status(200).json({
+            _id: user._id,
+            fullName: user.fullName,
+            username: user.username,
+            email: user.email,
+            profilePic: user.profilePic,
+            message: "Email verified successfully"
+        });
+    } catch (error) {
+        console.log("Error in verifyOTP controller: ", error.message);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
+// Resend OTP endpoint with rate limiting
+const resendLimiter = new Map(); // Store email -> last resend time
+
+export const resendOTP = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ message: "Email is required" });
+        }
+
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(400).json({ message: "User not found" });
+        }
+
+        // Check if user is already verified
+        if (user.isVerified) {
+            console.log("User already verified in resendOTP, returning informative message");
+            return res.status(200).json({ 
+                message: "Email is already verified", 
+                isVerified: true 
+            });
+        }
+
+        // Rate limiting: Allow resend only once every 60 seconds
+        const lastResendTime = resendLimiter.get(email) || 0;
+        const now = Date.now();
+        const timeElapsed = now - lastResendTime;
+
+        if (lastResendTime && timeElapsed < 60000) { // 60000ms = 1 minute
+            const timeLeft = Math.ceil((60000 - timeElapsed) / 1000);
+            return res.status(429).json({
+                message: `Please wait ${timeLeft} seconds before requesting another OTP`
+            });
+        }
+
+        // Generate new OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otp_expiration = Date.now() + 10 * 60 * 1000; // 10 minutes from now
+        console.log("Resend - Generated new OTP:", otp);
+
+        // Update user
+        user.otp = otp;
+        user.otp_expiation = otp_expiration;
+        await user.save();
+
+        // Send email
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: email,
+            subject: "Verify your email",
+            text: `Your new OTP is ${otp} and it will expire in 10 minutes. Please verify your email to continue and Don't share this OTP with anyone.`,
+        });
+
+        // Update rate limiter
+        resendLimiter.set(email, now);
+
+        res.status(200).json({ message: "OTP sent successfully" });
+    } catch (error) {
+        console.log("Error in resendOTP controller: ", error.message);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
 
 
