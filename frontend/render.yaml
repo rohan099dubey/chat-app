@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: chat-app-frontend
+    env: static
+    buildCommand: npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://your-backend-app.onrender.com

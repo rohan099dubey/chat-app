@@ -4,7 +4,9 @@ import toast from 'react-hot-toast';
 import { io } from 'socket.io-client';
 
 // const BASE_URL = "http://10.1.5.67:3000/api";
-const BASE_URL = "http://localhost:3000";
+// const BASE_URL = "http://localhost:3000";
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+
 
 
 export const useAuthStore = create((set, get) => ({
@@ -34,7 +36,7 @@ export const useAuthStore = create((set, get) => ({
         set({ isSigningUp: true });
         try {
             const res = await axiosInstance.post("/auth/signup", data);
-            
+
             // If verification is required, don't set the user yet
             if (res.data.requiresVerification) {
                 toast.success("Account created! Please verify your email");
@@ -67,12 +69,12 @@ export const useAuthStore = create((set, get) => ({
             }
 
             const res = await axiosInstance.post("/auth/login", data);
-            
+
             // Check if response indicates user needs to verify email
             if (res.data.isVerified === false) {
                 return res.data; // Return data containing email for verification
             }
-            
+
             set({ authUser: res.data });
             toast.success("Logged in successfully");
             get().connectSocket();

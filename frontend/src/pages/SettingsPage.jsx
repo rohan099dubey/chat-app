@@ -1,4 +1,4 @@
-import PreviewSection from "../components/settingsPage/previewSection";
+import PreviewSection from "../components/settingsPage/PreviewSection";
 import Themes from "../components/settingsPage/Themes";
 import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
