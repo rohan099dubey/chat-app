@@ -12,12 +12,11 @@ const io = new Server(server, {
     },
 });
 
-const getReceiverSocketId = (userId) => { // Fixed typo: getRecieverSocketId -> getReceiverSocketId
+const getReceiverSocketId = (userId) => {
     return userSocketMap.get(userId);
 }
 
-//store all the online user here
-const userSocketMap = new Map(); // Use Map instead of object
+const userSocketMap = new Map();
 
 io.on("connection", (socket) => {
 
@@ -36,6 +35,55 @@ io.on("connection", (socket) => {
         }
         io.emit("getOnlineUsers", Array.from(userSocketMap.keys()));
     });
+
+    // 📞 Handle call initiation
+    socket.on("call-user", ({ to, from }) => {
+        const receiverSocketId = getReceiverSocketId(to);
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit("incoming-call", { from });
+        }
+    });
+
+    // ✅ Accept call
+    socket.on("call-accepted", ({ to }) => {
+        const receiverSocketId = getReceiverSocketId(to);
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit("call-accepted");
+        }
+    });
+
+    // 📤 Send SDP offer
+    socket.on("webrtc-offer", ({ to, sdp }) => {
+        const receiverSocketId = getReceiverSocketId(to);
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit("webrtc-offer", { sdp });
+        }
+    });
+
+    // 📥 Send SDP answer
+    socket.on("webrtc-answer", ({ to, sdp }) => {
+        const receiverSocketId = getReceiverSocketId(to);
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit("webrtc-answer", { sdp });
+        }
+    });
+
+    // ❄️ ICE Candidate exchange
+    socket.on("webrtc-ice-candidate", ({ to, candidate }) => {
+        const receiverSocketId = getReceiverSocketId(to);
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit("webrtc-ice-candidate", { candidate });
+        }
+    });
+
+    // 🚫 End call
+    socket.on("end-call", ({ to }) => {
+        const receiverSocketId = getReceiverSocketId(to);
+        if (receiverSocketId) {
+            io.to(receiverSocketId).emit("call-ended");
+        }
+    });
+
 });
 
 export { server, app, io, getReceiverSocketId }; // Added getReceiverSocketId to exports
