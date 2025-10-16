@@ -17,7 +17,7 @@ export const getUserForSidebar = async (req, res) => {
 
         res.status(200).json(user.friends);
     } catch (error) {
-        console.log("Error in getUserForSidebar :", error.message);
+        console.error("Error in getUserForSidebar :", error.message);
         res.status(500).json({ error: "Internal server error" });
     }
 };
@@ -52,7 +52,7 @@ export const getMessages = async (req, res) => {
                         // Modify the plain object directly - safer
                         message.file.url = data.publicUrl;
                     } else {
-                        console.warn(`[GetMessages] Could not get public URL for file: ${message.file.name}`);
+                        console.error(`[GetMessages] Could not get public URL for file: ${message.file.name}`);
                     }
                 } catch (error) {
                     console.error(`[GetMessages] Error getting file URL for ${message.file.name}:`, error);
@@ -61,7 +61,6 @@ export const getMessages = async (req, res) => {
             return message; // Return the plain object (possibly with updated file.url)
         }));
 
-        console.log("[GetMessages] Sending processed plain objects:", JSON.stringify(messagesWithUrls, null, 2));
         res.status(200).json(messagesWithUrls); // Send the array of plain objects
 
     } catch (error) {
@@ -79,10 +78,6 @@ export const sendMessage = async (req, res) => {
         const { id: receiverId } = req.params;
         const senderId = req.user._id;
 
-        console.log("[SendMessage] Received request:");
-        console.log("  Text:", text);
-        console.log("  File:", file ? { originalname: file.originalname, mimetype: file.mimetype, size: file.size } : "None"); // Log key file details
-
         // Check friendship (seems okay)
         const sender = await User.findById(senderId);
         if (!sender || !sender.friends.includes(receiverId)) { // Added check for sender existence
@@ -92,17 +87,13 @@ export const sendMessage = async (req, res) => {
         let fileDataForDb = null; // Renamed to avoid confusion with 'file' from req
 
         if (file) {
-            console.log("[SendMessage] Processing attached file...");
             try {
                 // --- Use file.mimetype from multer ---
                 const fileMimeType = file.mimetype;
                 const fileTypeCategory = getFileType(fileMimeType); // Get category (image, audio, etc.)
 
-                console.log(`[SendMessage] File type detected: ${fileMimeType}, Category: ${fileTypeCategory}`);
-
                 // --- Validate Type Category ---
                 if (fileTypeCategory === 'unknown') {
-                    console.log("[SendMessage] Validation failed: File type not supported");
                     // It's often better to delete the temp file multer might save here if using diskStorage
                     return res.status(400).json({ error: `File type (${fileMimeType}) not supported` });
                 }
@@ -110,7 +101,6 @@ export const sendMessage = async (req, res) => {
                 // --- Validate Size and Specific MimeType using the utility ---
                 // Pass the necessary details from req.file
                 validateFile({ type: fileMimeType, size: file.size }); // Use mimetype here
-                console.log("[SendMessage] File validation successful (type/size).");
 
                 // --- Compress/Process File using req.file ---
                 // Pass the necessary parts of req.file to compressFile
@@ -120,7 +110,6 @@ export const sendMessage = async (req, res) => {
                     originalname: file.originalname,
                     size: file.size // Pass original size if needed by compressFile logic
                 });
-                console.log("[SendMessage] File compression/processing successful.");
 
 
                 // --- Upload to Supabase ---
@@ -128,8 +117,6 @@ export const sendMessage = async (req, res) => {
                 const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${sanitizedName}`; // More robust random part
                 const folderPath = `${senderId}`; // Store user-specific
                 const supabasePath = `${folderPath}/${filename}`;
-
-                console.log(`[SendMessage] Uploading to Supabase path: ${supabasePath}`);
 
                 const { data: uploadData, error: uploadError } = await supabase.storage
                     .from('chat-files') // Ensure bucket name is correct
@@ -144,7 +131,6 @@ export const sendMessage = async (req, res) => {
                     console.error("[SendMessage] Supabase upload error:", uploadError);
                     throw new Error("Failed to upload file to storage."); // Throw a generic error
                 }
-                console.log("[SendMessage] Supabase upload successful:", uploadData);
 
 
                 // --- Get Public URL ---
@@ -166,7 +152,6 @@ export const sendMessage = async (req, res) => {
                     size: processedFileData.size, // Store the final size (after compression)
                     originalName: file.originalname // Keep the original name for display
                 };
-                console.log("[SendMessage] File processing complete. Data for DB:", fileDataForDb);
 
             } catch (error) {
                 // Catch errors from validation, compression, or upload
@@ -183,10 +168,8 @@ export const sendMessage = async (req, res) => {
         // --- Final Validation: Check if message has content ---
         // Use trim() for text validation
         if (!text?.trim() && !fileDataForDb) {
-            console.log("[SendMessage] Validation failed: Message has no text and no successfully processed file.");
             return res.status(400).json({ error: "Message cannot be empty (text or valid file required)" });
         }
-        console.log("[SendMessage] Final validation passed. Creating message document.");
 
         // --- Create and Save Message ---
         const newMessage = new Message({
@@ -197,7 +180,6 @@ export const sendMessage = async (req, res) => {
         });
 
         await newMessage.save();
-        console.log("[SendMessage] Message saved to DB:", newMessage._id);
 
         // --- Emit via Socket.IO ---
         // Prepare message payload for socket (potentially exclude raw path 'name' if not needed client-side)
@@ -208,14 +190,12 @@ export const sendMessage = async (req, res) => {
 
         const receiverSocketId = getReceiverSocketId(receiverId);
         if (receiverSocketId) {
-            console.log(`[SendMessage] Emitting 'newMessage' to socket ID: ${receiverSocketId}`);
             io.to(receiverSocketId).emit("newMessage", messageForSocket);
         } else {
             console.log(`[SendMessage] Receiver ${receiverId} is not online (no socket ID found).`);
         }
 
         // --- Send Response ---
-        console.log("[SendMessage] Sending success response (201).");
         res.status(201).json(messageForSocket); // Send the saved message data back
 
     } catch (error) {

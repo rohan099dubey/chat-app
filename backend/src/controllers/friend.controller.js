@@ -27,8 +27,7 @@ export const searchUsers = async (req, res) => {
             .select('username fullName profilePic')
             .limit(10);
 
-        // Log for debugging
-        console.log(`Search term: "${searchTerm}" found ${users.length} results`);
+
 
         res.status(200).json(users);
     } catch (error) {

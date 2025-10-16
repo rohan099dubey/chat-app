@@ -20,7 +20,7 @@ const transporter = nodemailer.createTransport({
 });
 
 // Verify transporter connection configuration
-transporter.verify(function(error, success) {
+transporter.verify(function (error, success) {
     if (error) {
         console.log('SMTP server connection error:', error);
     } else {
@@ -60,19 +60,15 @@ export const signup = async (req, res) => {
             return res.status(400).json({ message: "Passwords do not match" });
         }
 
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
         // Generate 6-digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const otp_expiation = Date.now() + 10 * 60 * 1000; // 10 minutes from now
-        console.log("Generated OTP:", otp);
 
         const newUser = new User({
             fullName,
             username,
             email,
-            password: hashedPassword,
+            password, // Assign plain password and let pre-save hook hash it
             otp,
             otp_expiation, // Using the field name from your model
             isVerified: false,
@@ -130,7 +126,7 @@ export const login = async (req, res) => {
 
         // Check if user is verified
         if (!user.isVerified) {
-            return res.status(401).json({ 
+            return res.status(401).json({
                 message: "Please verify your email before logging in",
                 isVerified: false,
                 email: user.email
@@ -261,7 +257,6 @@ export const checkUsername = async (req, res) => {
 export const verifyOTP = async (req, res) => {
     try {
         const { email, otp } = req.body;
-        console.log("Verifying OTP:", { email, otp });
 
         if (!email || !otp) {
             return res.status(400).json({ message: "Email and OTP are required" });
@@ -270,26 +265,14 @@ export const verifyOTP = async (req, res) => {
         const user = await User.findOne({ email });
 
         if (!user) {
-            console.log("User not found with email:", email);
             return res.status(400).json({ message: "User not found" });
         }
 
-        console.log("User found:", {
-            id: user._id,
-            email: user.email,
-            storedOTP: user.otp,
-            otpExpiration: user.otp_expiation,
-            isVerified: user.isVerified,
-            currentTime: new Date()
-        });
-
         // If user is already verified, send success response with their data
         if (user.isVerified) {
-            console.log("User already verified, returning user data:", user._id);
-            
             // Generate token for already verified user
             generateToken(user._id, res);
-            
+
             // Return success with user data
             return res.status(200).json({
                 _id: user._id,
@@ -305,19 +288,13 @@ export const verifyOTP = async (req, res) => {
         // Check if OTP is correct - ensure both are strings and trimmed
         const storedOTP = String(user.otp || '').trim();
         const submittedOTP = String(otp || '').trim();
-        
-        console.log("OTP comparison:", { storedOTP, submittedOTP });
-        
+
         if (!storedOTP || storedOTP !== submittedOTP) {
             return res.status(400).json({ message: "Invalid OTP" });
         }
 
         // Check if OTP is expired
         if (!user.otp_expiation || user.otp_expiation < Date.now()) {
-            console.log("OTP expired:", { 
-                expiration: new Date(user.otp_expiation || null), 
-                now: new Date() 
-            });
             return res.status(400).json({ message: "OTP has expired or is invalid" });
         }
 
@@ -326,7 +303,6 @@ export const verifyOTP = async (req, res) => {
         user.otp = undefined;
         user.otp_expiation = undefined;
         await user.save();
-        console.log("User verified successfully:", user._id);
 
         // Generate token
         generateToken(user._id, res);
@@ -364,10 +340,9 @@ export const resendOTP = async (req, res) => {
 
         // Check if user is already verified
         if (user.isVerified) {
-            console.log("User already verified in resendOTP, returning informative message");
-            return res.status(200).json({ 
-                message: "Email is already verified", 
-                isVerified: true 
+            return res.status(200).json({
+                message: "Email is already verified",
+                isVerified: true
             });
         }
 
@@ -386,7 +361,6 @@ export const resendOTP = async (req, res) => {
         // Generate new OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const otp_expiration = Date.now() + 10 * 60 * 1000; // 10 minutes from now
-        console.log("Resend - Generated new OTP:", otp);
 
         // Update user
         user.otp = otp;

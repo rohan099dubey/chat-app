@@ -17,14 +17,26 @@ const PORT = process.env.PORT
 app.use(express.json({ limit: '50MB' }));
 app.use(express.urlencoded({ limit: '50MB', extended: true }));
 app.use(cookieParser());
-app.use(cors(
-    {
-        // origin: "http://localhost:5173",
-        // credentials: true,
-        origin: process.env.FRONTEND_URL || "http://localhost:5173",
+
+const allowedOrigins = [
+    "http://localhost:5173",
+    process.env.FRONTEND_URL // e.g., "https://panchayat-frontend.onrender.com"
+].filter(Boolean);
+
+app.use(
+    cors({
+        origin: function (origin, callback) {
+            // allow requests with no origin (like mobile apps or CURL)
+            if (!origin) return callback(null, true);
+            if (allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            } else {
+                return callback(new Error('Not allowed by CORS'));
+            }
+        },
         credentials: true,
-    }
-))
+    })
+);
 
 app.use("/api/auth", authRoutes)
 app.use("/api/messages", messageRoutes);
