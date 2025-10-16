@@ -41,7 +41,9 @@ app.use(
 app.use("/api/auth", authRoutes)
 app.use("/api/messages", messageRoutes);
 app.use("/api/contacts", friendRoutes);
-
+app.get("/health", (req, res) => {
+    res.status(200).json({ status: "ok", uptime: process.uptime(), timestamp: Date.now() });
+});
 
 server.on('error', (err) => {
     console.error('Server error:', err);
