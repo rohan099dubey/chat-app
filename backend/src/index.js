@@ -20,7 +20,7 @@ app.use(cookieParser());
 
 const allowedOrigins = [
     "http://localhost:5173",
-    process.env.FRONTEND_URL // e.g., "https://panchayat-frontend.onrender.com"
+    process.env.FRONTEND_URL
 ].filter(Boolean);
 
 app.use(

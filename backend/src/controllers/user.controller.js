@@ -13,14 +13,11 @@ export const updateProfile = async (req, res) => {
             return res.status(404).json({ error: "User not found" });
         }
 
-        // Update basic fields
         if (fullName) user.fullName = fullName;
         if (bio !== undefined) user.bio = bio;
-
-        // Handle profile picture upload
         if (profilePic) {
             try {
-                // Validate and compress the image
+
                 validateProfileImage(profilePic);
 
                 // Extract base64 data and create buffer

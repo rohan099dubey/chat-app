@@ -2,7 +2,6 @@ import User from '../models/user.model.js';
 
 export const searchUsers = async (req, res) => {
     try {
-        // Support both q and query parameters for flexibility
         const searchTerm = req.query.q || req.query.query;
         const currentUserId = req.user._id;
 
@@ -10,24 +9,20 @@ export const searchUsers = async (req, res) => {
             return res.status(400).json({ error: "Search query is required" });
         }
 
-        // Find users by username, excluding current user and existing friends
         const currentUser = await User.findById(currentUserId);
         if (!currentUser) {
             return res.status(404).json({ error: "Current user not found" });
         }
 
-        // Find users by username, excluding current user and existing friends
         const users = await User.find({
             $and: [
-                { _id: { $ne: currentUserId } }, // Not the current user
-                { _id: { $nin: currentUser.friends } }, // Not already friends
-                { username: { $regex: searchTerm, $options: 'i' } } // Username matches search term
+                { _id: { $ne: currentUserId } },
+                { _id: { $nin: currentUser.friends } },
+                { username: { $regex: searchTerm, $options: 'i' } }
             ]
         })
             .select('username fullName profilePic')
             .limit(10);
-
-
 
         res.status(200).json(users);
     } catch (error) {

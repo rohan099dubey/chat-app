@@ -10,7 +10,6 @@ export const getUserForSidebar = async (req, res) => {
     try {
         const loggedInUserId = req.user._id;
 
-        // Get user with friends populated
         const user = await User.findById(loggedInUserId)
             .populate('friends', 'username fullName profilePic')
             .select('friends');
@@ -27,21 +26,17 @@ export const getMessages = async (req, res) => {
         const { id: userToChatId } = req.params;
         const myId = req.user._id;
 
-        // ... validation and friend check ...
-
-        // Fetch messages from MongoDB and convert to plain objects
-        const messages = await Message.find({ // Find matching messages
+        const messages = await Message.find({
             $or: [
                 { senderId: myId, receiverId: userToChatId },
                 { senderId: userToChatId, receiverId: myId },
             ]
         })
-            .lean() // *** ADD .lean() HERE ***
-            .sort({ createdAt: 1 }); // Sort the plain objects
+            .lean()
+            .sort({ createdAt: 1 });
 
-        // Process the plain message objects to add file URLs
+
         const messagesWithUrls = await Promise.all(messages.map(async (message) => {
-            // 'message' is now guaranteed to be a plain JS object
             if (message.file && message.file.name) {
                 try {
                     const { data } = supabase.storage
@@ -49,7 +44,6 @@ export const getMessages = async (req, res) => {
                         .getPublicUrl(message.file.name);
 
                     if (data && data.publicUrl) {
-                        // Modify the plain object directly - safer
                         message.file.url = data.publicUrl;
                     } else {
                         console.error(`[GetMessages] Could not get public URL for file: ${message.file.name}`);
@@ -58,10 +52,10 @@ export const getMessages = async (req, res) => {
                     console.error(`[GetMessages] Error getting file URL for ${message.file.name}:`, error);
                 }
             }
-            return message; // Return the plain object (possibly with updated file.url)
+            return message;
         }));
 
-        res.status(200).json(messagesWithUrls); // Send the array of plain objects
+        res.status(200).json(messagesWithUrls);
 
     } catch (error) {
         console.error("[GetMessages] Error:", error);
@@ -72,56 +66,45 @@ export const getMessages = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
     try {
-        // Data from multer: req.file contains file info, req.body contains text fields
         const { text } = req.body;
-        const file = req.file; // File object from multer
+        const file = req.file;
         const { id: receiverId } = req.params;
         const senderId = req.user._id;
 
-        // Check friendship (seems okay)
         const sender = await User.findById(senderId);
-        if (!sender || !sender.friends.includes(receiverId)) { // Added check for sender existence
+        if (!sender || !sender.friends.includes(receiverId)) {
             return res.status(403).json({ error: "You can only chat with your friends" });
         }
 
-        let fileDataForDb = null; // Renamed to avoid confusion with 'file' from req
+        let fileDataForDb = null;
 
         if (file) {
             try {
-                // --- Use file.mimetype from multer ---
                 const fileMimeType = file.mimetype;
-                const fileTypeCategory = getFileType(fileMimeType); // Get category (image, audio, etc.)
+                const fileTypeCategory = getFileType(fileMimeType);
 
-                // --- Validate Type Category ---
                 if (fileTypeCategory === 'unknown') {
-                    // It's often better to delete the temp file multer might save here if using diskStorage
                     return res.status(400).json({ error: `File type (${fileMimeType}) not supported` });
                 }
 
-                // --- Validate Size and Specific MimeType using the utility ---
-                // Pass the necessary details from req.file
-                validateFile({ type: fileMimeType, size: file.size }); // Use mimetype here
-
-                // --- Compress/Process File using req.file ---
-                // Pass the necessary parts of req.file to compressFile
+                validateFile({ type: fileMimeType, size: file.size });
+                e
                 const processedFileData = await compressFile({
-                    buffer: file.buffer, // The raw file data from multer
+                    buffer: file.buffer,
                     mimetype: file.mimetype,
                     originalname: file.originalname,
-                    size: file.size // Pass original size if needed by compressFile logic
+                    size: file.size
                 });
 
-
-                // --- Upload to Supabase ---
-                const sanitizedName = processedFileData.name.replace(/[^a-zA-Z0-9._-]/g, '_'); // Ensure safe name
-                const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${sanitizedName}`; // More robust random part
+                const sanitizedName = processedFileData.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${sanitizedName}`;
                 const folderPath = `${senderId}`; // Store user-specific
                 const supabasePath = `${folderPath}/${filename}`;
 
                 const { data: uploadData, error: uploadError } = await supabase.storage
-                    .from('chat-files') // Ensure bucket name is correct
-                    .upload(supabasePath, processedFileData.buffer, { // Use the potentially compressed buffer
-                        contentType: processedFileData.type, // Use the potentially updated mimetype (e.g., image/jpeg)
+                    .from('chat-files')
+                    .upload(supabasePath, processedFileData.buffer, {
+                        contentType: processedFileData.type,
                         cacheControl: '3600',
                         upsert: false
                     });
@@ -129,11 +112,9 @@ export const sendMessage = async (req, res) => {
 
                 if (uploadError) {
                     console.error("[SendMessage] Supabase upload error:", uploadError);
-                    throw new Error("Failed to upload file to storage."); // Throw a generic error
+                    throw new Error("Failed to upload file to storage.");
                 }
 
-
-                // --- Get Public URL ---
                 const { data: urlData } = supabase.storage
                     .from('chat-files')
                     .getPublicUrl(supabasePath);
@@ -144,49 +125,41 @@ export const sendMessage = async (req, res) => {
                 }
                 console.log("[SendMessage] Supabase public URL:", urlData.publicUrl);
 
-                // Prepare file data for saving in the Message document
+
                 fileDataForDb = {
-                    url: urlData.publicUrl, // The accessible URL
-                    type: processedFileData.type, // Storing the final MIME type
-                    name: supabasePath, // Store the path in Supabase for potential future reference/deletion
-                    size: processedFileData.size, // Store the final size (after compression)
-                    originalName: file.originalname // Keep the original name for display
+                    url: urlData.publicUrl,
+                    type: processedFileData.type,
+                    name: supabasePath,
+                    size: processedFileData.size,
+                    originalName: file.originalname
                 };
 
             } catch (error) {
-                // Catch errors from validation, compression, or upload
+
                 console.error("[SendMessage] Error during file processing pipeline:", error);
-                // Provide specific feedback if it's a validation error we threw
+
                 if (error.message.includes("File type") || error.message.includes("File size")) {
                     return res.status(400).json({ error: error.message });
                 }
-                // Otherwise, it's likely a server error during processing/upload
+
                 return res.status(500).json({ error: "File processing failed on server." });
             }
-        } // End of if(file) block
+        }
 
-        // --- Final Validation: Check if message has content ---
-        // Use trim() for text validation
         if (!text?.trim() && !fileDataForDb) {
             return res.status(400).json({ error: "Message cannot be empty (text or valid file required)" });
         }
 
-        // --- Create and Save Message ---
         const newMessage = new Message({
             senderId,
             receiverId,
-            text: text?.trim() || "", // Ensure text is at least an empty string
-            file: fileDataForDb // Save the processed file data (or null)
+            text: text?.trim() || "",
+            file: fileDataForDb
         });
 
         await newMessage.save();
 
-        // --- Emit via Socket.IO ---
-        // Prepare message payload for socket (potentially exclude raw path 'name' if not needed client-side)
-        const messageForSocket = newMessage.toObject(); // Convert Mongoose doc to plain object
-        // If you added Supabase URL generation logic in getMessages, ensure consistency here.
-        // If not, the URL is already in messageForSocket.file.url
-
+        const messageForSocket = newMessage.toObject();
 
         const receiverSocketId = getReceiverSocketId(receiverId);
         if (receiverSocketId) {
@@ -195,11 +168,10 @@ export const sendMessage = async (req, res) => {
             console.log(`[SendMessage] Receiver ${receiverId} is not online (no socket ID found).`);
         }
 
-        // --- Send Response ---
-        res.status(201).json(messageForSocket); // Send the saved message data back
+        res.status(201).json(messageForSocket);
 
     } catch (error) {
-        // Catch unexpected errors (e.g., DB connection, friendship check)
+
         console.error("[SendMessage] Unhandled error in sendMessage controller:", error);
         res.status(500).json({ error: error.message || "Internal server error occurred." });
     }
