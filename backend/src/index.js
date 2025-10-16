@@ -45,6 +45,10 @@ app.get("/health", (req, res) => {
     res.status(200).json({ status: "ok", uptime: process.uptime(), timestamp: Date.now() });
 });
 
+app.head("/health", (req, res) => {
+    res.status(200).json({ status: "ok", uptime: process.uptime(), timestamp: Date.now() });
+});
+
 server.on('error', (err) => {
     console.error('Server error:', err);
 });
