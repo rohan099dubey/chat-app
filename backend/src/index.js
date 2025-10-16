@@ -56,6 +56,6 @@ server.on('error', (err) => {
 server.listen(PORT, () => {
     console.log("running Server on PORT:" + PORT)
     connectDB();
-    // Start the cleanup job for unverified users
     scheduleCleanupJob();
+    setInterval(scheduleCleanupJob, 60 * 1000);
 })
